@@ -1,0 +1,53 @@
+pipeline {
+    agent any
+    environment {
+        AWS_REGION = 'ap-south-1'
+        ECR_REGISTRY = '692859948744.dkr.ecr.ap-south-1.amazonaws.com/my-app-repo'
+        ECR_REPOSITORY = 'my-app-repo'
+        IMAGE_TAG = "${env.BUILD_ID}"
+    }
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Shaik-bilaal/cicd-jenkins-pipeline-.git'
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh """
+                    echo "Logging in to Amazon ECR..."
+                    aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+                    echo "Building Docker image..."
+                    docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+                    docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+                    """
+                }
+            }
+        }
+        stage('Push Image to ECR') {
+            steps {
+                script {
+                    sh """
+                    echo "Pushing Docker image to ECR..."
+                    docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+                    docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+                    echo "Writing image definitions file..."
+                    printf '[{"name":"app-container","imageUri":"%s"}]' $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG > imagedefinitions.json
+                    """
+                }
+            }
+        }
+        stage('Deploy to ECS') {
+            steps {
+                script {
+                    sh """
+                    echo "Updating ECS service..."
+                    aws ecs update-service --cluster my-ecscluster --service my-servvice --force-new-deployment
+                    """
+                }
+            }
+        }
+    }
+}
+
